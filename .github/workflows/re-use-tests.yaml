@@ -116,4 +116,5 @@ jobs:
           cwd: './meta-human-dna-addon'
           message: 'Updated badges for ${{ matrix.os }}'
           add: 'docs/images/badges/*.svg'
+          pull: '--rebase --autostash' 
           push: true
