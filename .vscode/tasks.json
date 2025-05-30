@@ -31,7 +31,7 @@
         },
         {
             "label": "Run Pytest With Coverage",
-            "command": "pytest ${input:test-suite} ${input:test-case} --cov-config=.coveragerc --cov=src/addons/meta_human_dna --cov-report=xml:reports/coverage/results.xml",
+            "command": "pytest ${input:test-suite} ${input:test-case} --cov-config=.coveragerc --cov=src/addons/meta_human_dna --cov-report=xml:reports/coverage/results.xml --cov-report=html:reports/coverage/html",
             "type": "shell",
             "group": {
                 "kind": "build"
@@ -71,10 +71,11 @@
         {
             "id": "unreal-version",
             "type": "pickString",
-            "default": "5.4",
+            "default": "5.6",
             "options": [
                 "5.4",
-                "5.5"
+                "5.5",
+                "5.6"
             ],
             "description": "What unreal version to launch"
         },

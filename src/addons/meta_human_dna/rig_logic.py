@@ -204,6 +204,13 @@ class RigLogicInstance(bpy.types.PropertyGroup):
         set=callbacks.set_active_material_preview,
         get=callbacks.get_active_material_preview
     ) # type: ignore
+    show_bones: bpy.props.BoolProperty(
+        name="Show Bones",
+        default=False,
+        description="Whether to show or hide the bones that belong to this RigLogic instance in the 3D view",
+        set=callbacks.set_show_bones,
+        get=callbacks.get_show_bones
+    ) # type: ignore
 
     # --------------------- Mesh Utilities Properties ------------------
     head_mesh_topology_groups: bpy.props.EnumProperty(
@@ -259,9 +266,14 @@ class RigLogicInstance(bpy.types.PropertyGroup):
         options={'ANIMATABLE'},
         items=callbacks.get_active_shape_key_mesh_names
     ) # type: ignore
+    solo_shape_key: bpy.props.BoolProperty(
+        name="Solo Shape Key",
+        description="If this is enabled, every time you sculpt/edit a shape key, it will set all other shape keys to 0 and the selected shape key to 1",
+        default=False
+    ) # type: ignore
     generate_neutral_shapes: bpy.props.BoolProperty(
         name="Generate Neutral Shapes",
-        description="Use this to generate neutral shape keys that match the names in the DNA file. This is useful when you can't import the deltas because vert count is not the same",
+        description="Use this to generate neutral shape keys that match the names in the DNA file. This is useful when you can't import the deltas because vert ids are not the same, or you just want to use neutral shapes as a starting point",
         default=False
     ) # type: ignore
 
@@ -276,8 +288,8 @@ class RigLogicInstance(bpy.types.PropertyGroup):
         description='The output method to use when creating the dna file',
         default='calibrate',
         items=[
-            ('calibrate', 'Calibrate', 'Uses the original dna file and calibrates the included bones and mesh changes into a new dna file. Use this method if your vert indices and bone names are the same as the original DNA. This is the recommended method'),
-            ('overwrite', 'Overwrite', 'Uses the original dna file and overwrites the dna data based on the current mesh and armature data in the scene. Use this method if your vert indices and bone names are different from the original DNA. Only use this method when calibration method is not possible'),
+            ('calibrate', 'Calibrate', 'Uses the original dna file and calibrates the included bones and mesh changes into a new dna file. Use this method if your vert indices and bone names are the same as the original DNA. This is the recommended method', 'NONE', 0),
+            ('overwrite', 'Overwrite', '(Experimental, and not fully functional yet) Uses the original dna file and overwrites the dna data based on the current mesh and armature data in the scene. Use this method if your vert indices and bone names are different from the original DNA. Only use this method when calibration method is not possible', 'ERROR', 1),
         ]
     ) # type: ignore
     output_format: bpy.props.EnumProperty(
@@ -639,6 +651,23 @@ class RigLogicInstance(bpy.types.PropertyGroup):
         self.manager.mapGUIToRawControls(self.instance)
         self.manager.calculate(self.instance)
 
+    def solo_shape_key_value(self, shape_key: bpy.types.ShapeKey):
+        # skip if the head mesh is not set
+        if not self.head_mesh or not self.dna_reader:
+            return
+        
+        # skip if there are no shape keys
+        if len(bpy.data.shape_keys) == 0:
+            return
+        
+        # make all other shape keys 0.0
+        for index, _ in enumerate(self.instance.getBlendShapeOutputs()):
+            for _shape_key in self.shape_key_blocks.get(index, []):
+                if _shape_key and _shape_key != shape_key:
+                    _shape_key.value = 0.0
+
+        # set the provided shape key value to 1.0
+        shape_key.value = 1.0
 
     def update_shape_keys(self) -> list[tuple[bpy.types.ShapeKey, float]]:
         # skip if the head mesh is not set

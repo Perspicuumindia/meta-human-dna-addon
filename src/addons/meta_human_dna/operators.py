@@ -367,14 +367,17 @@ class ConvertSelectedToDna(bpy.types.Operator, MetahumanDnaImportProperties):
         default=True,
         description="Runs the calibration process after converting the selected mesh. This export the DNA to disk and re-loads it into the rig logic instance."
     ) # type: ignore
+    # this can be used when invoking the operator programmatically to set the rig logic instance name
+    new_instance_name: bpy.props.StringProperty(default="") # type: ignore
 
     def execute(self, context):
         selected_object = context.active_object # type: ignore
         new_folder = Path(bpy.path.abspath(self.new_folder))
+        new_name = self.new_name or self.new_instance_name
         if not selected_object or not selected_object.type == 'MESH':
             self.report({'ERROR'}, 'You must select a mesh to convert.')
             return {'CANCELLED'}
-        if not self.new_name:
+        if not new_name:
             self.report({'ERROR'}, 'You must set a new name.')
             return {'CANCELLED'}
         if not self.new_folder:
@@ -409,13 +412,14 @@ class ConvertSelectedToDna(bpy.types.Operator, MetahumanDnaImportProperties):
         # we don't want to evaluate the dependency graph while importing the DNA
         window_manager_properties.evaluate_dependency_graph = False
         face = MetahumanFace(
-            name=self.new_name,
+            name=new_name,
             dna_file_path=Path(self.base_dna),
             dna_import_properties=self.properties # type: ignore
         )
         # try to separate the selected object by its unreal head material first if it has one
         selected_object = face.pre_convert_mesh_cleanup(mesh_object=selected_object)
         if not selected_object:
+            window_manager_properties.evaluate_dependency_graph = True
             self.report({'ERROR'}, 'The selected object failed to be separated by its head material.')
             return {'CANCELLED'}
 
@@ -423,6 +427,7 @@ class ConvertSelectedToDna(bpy.types.Operator, MetahumanDnaImportProperties):
         success, message = face.validate_conversion(mesh_object=selected_object)
         if not success: # type: ignore
             face.delete()
+            window_manager_properties.evaluate_dependency_graph = True
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
         
@@ -444,7 +449,7 @@ class ConvertSelectedToDna(bpy.types.Operator, MetahumanDnaImportProperties):
             )        
             calibrator.run()
             
-            new_dna_file_path = str(new_folder / f'{self.new_name}.dna')
+            new_dna_file_path = str(new_folder / f'{new_name}.dna')
             # make the path relative to the blend file if it is saved
             if bpy.data.filepath:
                 try:
@@ -461,7 +466,7 @@ class ConvertSelectedToDna(bpy.types.Operator, MetahumanDnaImportProperties):
         # active object to the face board
         utilities.switch_to_object_mode()
         bpy.context.view_layer.objects.active = face.face_board_object # type: ignore
-        utilities.switch_to_pose_mode(face.face_board_object)
+        utilities.switch_to_pose_mode(face.face_board_object) # type: ignore
         face.head_rig_object.hide_set(True) # type: ignore
 
         # Ask the user for consent to collect metrics
@@ -573,7 +578,7 @@ class ForceEvaluate(bpy.types.Operator):
             current_context = utilities.get_current_context()
             instance.head_rig.hide_set(False) # type: ignore
             bpy.context.view_layer.objects.active = instance.head_rig # type: ignore
-            utilities.switch_to_pose_mode(instance.head_rig)
+            utilities.switch_to_pose_mode(instance.head_rig) # type: ignore
             utilities.set_context(current_context)
         else:
             self.report({'ERROR'}, 'No active Rig Logic Instance found!')
@@ -1035,7 +1040,6 @@ class MetricsCollectionConsent(bpy.types.Operator):
         row = self.layout.row()
         row.label(text="Will you allow us to collect bug reports?")
         row.operator('meta_human_dna.open_metrics_collection_agreement', text='', icon='URL')
-    
 
 class SculptThisShapeKey(ShapeKeyOperatorBase):
     """Sculpt this shape key"""
@@ -1050,6 +1054,11 @@ class SculptThisShapeKey(ShapeKeyOperatorBase):
                 return {'CANCELLED'}
             
             _, key_block, _, mesh_object = result # type: ignore
+
+            # solo the shape key before sculpting if the solo option is enabled
+            if instance.solo_shape_key:
+                instance.solo_shape_key_value(shape_key=key_block)
+
             self.lock_all_other_shape_keys(mesh_object, key_block)
             utilities.switch_to_sculpt_mode(mesh_object)
             mesh_object.show_only_shape_key = False
@@ -1069,6 +1078,11 @@ class EditThisShapeKey(ShapeKeyOperatorBase):
                 return {'CANCELLED'}
             
             _, key_block, _, mesh_object = result # type: ignore
+
+            # solo the shape key before editing if the solo option is enabled
+            if instance.solo_shape_key:
+                instance.solo_shape_key_value(shape_key=key_block)
+
             self.lock_all_other_shape_keys(mesh_object, key_block)
             short_name = self.shape_key_name.split("__", 1)[-1]
             utilities.switch_to_edit_mode(mesh_object)
@@ -1310,7 +1324,7 @@ class AddRigLogicTextureNode(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         space = context.space_data # type: ignore
-        node_tree = space.node_tree # type: ignore                
+        node_tree = getattr(space, 'node_tree', None) # type: ignore
         if node_tree and node_tree.type == 'SHADER':
             active_material = cls.get_active_material(context)
             if not active_material:
