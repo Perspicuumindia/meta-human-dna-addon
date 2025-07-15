@@ -12,10 +12,12 @@ from ..utilities import preserve_context
 from ..rig_logic import RigLogicInstance
 from .misc import get_dna_writer, get_dna_reader
 from ..bindings import riglogic
+from ..exceptions import InvalidComponentTypeError
 from ..constants import (
     SCALE_FACTOR, 
     TOPO_GROUP_PREFIX,
-    EXTRA_BONES
+    EXTRA_BONES,
+    ComponentType
 )
 
 logger = logging.getLogger(__name__)
@@ -26,9 +28,12 @@ class DNAExporter:
             instance: RigLogicInstance,
             linear_modifier: float,
             meshes: bool = True,
+            shape_keys: bool = True,
             bones: bool = True,
+            textures: bool = True,
             vertex_colors: bool = True,
             file_name: str | None = None,
+            component_type: ComponentType | None = None,
             reader: 'riglogic.BinaryStreamReader | None' = None
         ):
         self._instance = instance
@@ -36,16 +41,26 @@ class DNAExporter:
         self._prefix = instance.name
 
         self._include_meshes = meshes
+        self._include_shape_keys = shape_keys
         self._include_bones = bones
+        self._include_textures = textures
         self._include_vertex_colors = vertex_colors
+        self._component_type = component_type or instance.output_component
 
         self._output_folder = Path(bpy.path.abspath(instance.output_folder_path))
-        self._source_dna_file = Path(bpy.path.abspath(instance.dna_file_path))
+
+        if self._component_type == 'head':
+            self.source_dna_file = Path(bpy.path.abspath(instance.head_dna_file_path))
+        elif self._component_type == 'body':
+            self.source_dna_file = Path(bpy.path.abspath(instance.body_dna_file_path))
+        else:
+            raise InvalidComponentTypeError(self._component_type)
+
         self._target_dna_file = Path(bpy.path.abspath(instance.output_folder_path)) / (file_name or f'{instance.name}.dna')
 
         # Open a read to the source DNA file if an existing reader is not provided
         if not reader:
-            self._dna_reader = get_dna_reader(file_path=self._source_dna_file)
+            self._dna_reader = get_dna_reader(file_path=self.source_dna_file)
         else:
             self._dna_reader = reader
 
@@ -61,12 +76,23 @@ class DNAExporter:
             None
         )
 
-        # The head mesh is always the first mesh in the DNA file
-        self._export_lods = {
-            0: [(instance.head_mesh, 0)]
-        }
+        # The head and body mesh are always the first mesh in the DNA file
+        if self._component_type == 'head':
+            self._export_lods = {
+                0: [(instance.head_mesh, 0)]
+            }
+            self._extra_bones = EXTRA_BONES
+            self._rig_object = instance.head_rig
+        elif self._component_type == 'body':
+            self._export_lods = {
+                0: [(instance.body_mesh, 0)]
+            }
+            self._extra_bones = []
+            self._rig_object = instance.body_rig
+        else:
+            raise InvalidComponentTypeError(self._component_type)
+        
         self._mesh_indices = [0]
-        self._rig_object = instance.head_rig
         self._non_lod_mesh_objects = []
         self._images = []
         self._bone_index_lookup = {}
@@ -74,11 +100,21 @@ class DNAExporter:
 
     def initialize_scene_data(self):
         mesh_objects = []
-        for output_item in self._instance.output_item_list:
+        output_items = []
+        main_mesh_object = None
+
+        if self._component_type == 'head':
+            output_items = self._instance.output_head_item_list
+            main_mesh_object = self._instance.head_mesh
+        elif self._component_type == 'body':
+            output_items = self._instance.output_body_item_list
+            main_mesh_object = self._instance.body_mesh
+
+        for output_item in output_items:
             if output_item.include:
                 if output_item.scene_object and output_item.scene_object.type == 'ARMATURE':                    
                     self._rig_object = output_item.scene_object
-                elif output_item.scene_object == self._instance.head_mesh:
+                elif main_mesh_object and output_item.scene_object == main_mesh_object:
                     continue
                 elif output_item.scene_object and output_item.scene_object.type == 'MESH':
                     if not self._include_meshes:
@@ -97,13 +133,14 @@ class DNAExporter:
             if index == -1:
                 self._non_lod_mesh_objects.append(mesh_object)
             else:
+                self._export_lods[index] = self._export_lods.get(index, [])
                 self._export_lods[index].append((mesh_object, mesh_index))
                 self._mesh_indices.append(mesh_index)
                 mesh_index += 1
 
-        # Also check if the head mesh is not an LOD mesh
-        if utilities.get_lod_index(self._instance.head_mesh.name) == -1:
-            self._non_lod_mesh_objects.append(self._instance.head_mesh)
+        # Also check if the main mesh is not an LOD mesh
+        if main_mesh_object and utilities.get_lod_index(main_mesh_object.name) == -1:
+            self._non_lod_mesh_objects.append(main_mesh_object)
 
         # Initialize the vertex color data array
         self._vertex_color_data = [{
@@ -148,7 +185,7 @@ class DNAExporter:
             meshes_with_mismatched_origins = []
             for _, mesh_objects in self._export_lods.items():
                 for mesh_object, _ in mesh_objects:
-                    if (self._rig_object.location.copy() - mesh_object.location).length > 1e-6:
+                    if (self._rig_object.location.copy() - mesh_object.location).length > 1e-5:
                         meshes_with_mismatched_origins.append(mesh_object)
             
             if meshes_with_mismatched_origins:
@@ -201,7 +238,8 @@ class DNAExporter:
     @staticmethod
     @preserve_context
     def get_bone_transforms(
-            armature_object: bpy.types.Object
+            armature_object: bpy.types.Object,
+            extra_bones: list[tuple[str, dict]] = EXTRA_BONES,
         ) -> tuple[
             list[int],
             list[str],
@@ -228,7 +266,7 @@ class DNAExporter:
         utilities.switch_to_bone_edit_mode(armature_object)
 
         # Remove the extra bones from the list of bones
-        ignored_bone_names = [i for i, _ in EXTRA_BONES]
+        ignored_bone_names = [i for i, _ in extra_bones]
         edit_bones = [i for i in armature_object.data.edit_bones if i.name not in ignored_bone_names] # type: ignore
         for index, edit_bone in enumerate(edit_bones): # type: ignore
             if index == 0:
@@ -418,7 +456,7 @@ class DNAExporter:
                 meshIndex=mesh_index, 
                 vertexIndex=vertex.index,
                 weights=weights
-            )        
+            )      
 
     def set_dna_bones(
             self, 
@@ -450,6 +488,9 @@ class DNAExporter:
         self._dna_writer.setNeutralJointRotations([[x, y, z] for x, y, z in zip(dna_x_rotations, dna_y_rotations, dna_z_rotations)])
     
     def save_images(self):
+        if not self._include_textures:
+            return
+        
         for image, file_name in self._images:
             new_image_path = self._target_dna_file.parent / 'Maps' / file_name
             os.makedirs(new_image_path.parent, exist_ok=True)
@@ -493,7 +534,8 @@ class DNAExporter:
         # self._dna_writer.setLODCount(len(self._export_lods.keys()))
 
         bone_indices, bone_names, hierarchy, is_leaf, translations, rotations = self.get_bone_transforms(
-            armature_object=self._rig_object
+            armature_object=self._rig_object,
+            extra_bones=self._extra_bones
         )
 
         # Set the bone data

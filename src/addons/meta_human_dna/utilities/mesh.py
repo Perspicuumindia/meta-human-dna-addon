@@ -4,6 +4,7 @@ import json
 import math
 import bmesh
 import logging
+from pathlib import Path
 from mathutils import Vector, Matrix
 from bpy_extras.bmesh_utils import bmesh_linked_uv_islands
 from .misc import (
@@ -14,8 +15,8 @@ from .misc import (
 )
 from ..constants import (
     LOD_REGEX,
-    Axis,
-    TOPOLOGY_VERTEX_GROUPS_FILE_PATH
+    SHAPE_KEY_BASIS_NAME,
+    Axis
 )
 
 
@@ -42,7 +43,7 @@ def initialize_basis_shape_key(mesh_object: bpy.types.Object) -> bpy.types.Key:
     mesh_object.shape_key_clear()
         
     # create the basis shape key
-    shape_key_block = mesh_object.shape_key_add(name='Basis')
+    shape_key_block = mesh_object.shape_key_add(name=SHAPE_KEY_BASIS_NAME)
     # mesh_object.data.shape_keys.use_relative = False
     shape_key = shape_key_block.id_data
 
@@ -196,7 +197,7 @@ def select_vertex_group(
 def get_shape_key_delta_vertices(
         mesh_object: bpy.types.Object, 
         shape_key_name: str,
-        basis_shape_key_name: str = 'Basis',
+        basis_shape_key_name: str = SHAPE_KEY_BASIS_NAME,
         delta_threshold: float = 0.0001
     ) -> list[int]:
     switch_to_object_mode()
@@ -367,6 +368,18 @@ def get_bounding_box_width(scene_object: bpy.types.Object) -> float:
     width = max(x_coords) - min(x_coords)
     return width
 
+def get_bounding_box_height(scene_object: bpy.types.Object) -> float:
+    # Ensure the object has a bounding box
+    if not scene_object.bound_box:
+        return 0.0
+
+    # Extract the z-coordinates from the bounding box
+    z_coords = [vertex[2] for vertex in scene_object.bound_box]
+
+    # Calculate the height
+    height = max(z_coords) - min(z_coords)
+    return height
+
 def find_closest_vertex(vertices, position):
     return min(
         vertices,
@@ -464,7 +477,7 @@ def split_mesh_along_uv_islands(bmesh_object: bmesh.types.BMesh) -> dict[int, in
     return split_to_original_vert_lookup
 
 
-def save_topology_vertex_groups(mesh_object: bpy.types.Object):
+def save_topology_vertex_groups(mesh_object: bpy.types.Object, file_path: Path):
     vertex_groups = {}
     for vertex_group in mesh_object.vertex_groups:
         if vertex_group.name.startswith('TOPO_GROUP_'):
@@ -476,7 +489,7 @@ def save_topology_vertex_groups(mesh_object: bpy.types.Object):
                 ]
             ]
 
-    with open(TOPOLOGY_VERTEX_GROUPS_FILE_PATH, 'w') as file:
+    with open(file_path, 'w') as file:
         json.dump(vertex_groups, file)
 
 

@@ -1,7 +1,7 @@
 import bpy
 import logging
 from .ui import callbacks
-from .constants import ToolInfo, NUMBER_OF_FACE_LODS
+from .constants import ToolInfo, NUMBER_OF_HEAD_LODS
 from .rig_logic import (
     RigLogicInstance, 
     ShapeKeyData, 
@@ -20,7 +20,7 @@ def get_dna_import_property_group_base_class():
     """
     _properties = {}
 
-    for i in range(NUMBER_OF_FACE_LODS):
+    for i in range(NUMBER_OF_HEAD_LODS):
 
         # add in import options for lods
         _properties[f'import_lod{i}'] = bpy.props.BoolProperty(
@@ -99,7 +99,17 @@ class MetahumanDnaImportProperties(get_dna_import_property_group_base_class()):
     import_face_board: bpy.props.BoolProperty(
         default=True,
         name='Face Board',
-        description='Whether to import the face board that drive the rig logic'
+        description='Whether to import the face board that drives the rig logic'
+    ) # type: ignore
+    reuse_face_board: bpy.props.BoolProperty(
+        default=False,
+        name='Reuse Face Board',
+        description='Whether to reuse or import a unique face board that drives the rig logic instead of a shared one. This is useful if you want to have multiple rigs in the same scene that drive different face meshes',
+    ) # type: ignore
+    include_body: bpy.props.BoolProperty(
+        default=False,
+        name='Include Body',
+        description='If true, this will try to find a body.dna file in the same folder as this .dna file. If the body.dna file is found, it will be imported as well',
     ) # type: ignore
     alternate_maps_folder: bpy.props.StringProperty(
         default='',
@@ -130,7 +140,32 @@ class MetahumanWindowMangerProperties(bpy.types.PropertyGroup, MetahumanDnaImpor
         items=callbacks.get_face_pose_previews_items,
         update=callbacks.update_face_pose
     )
-    
+    current_component_type: bpy.props.EnumProperty(
+        name="Component Type",
+        default='head',
+        items=[
+            ('head', 'Head', 'Set the head as the current component for utility operations'),
+            ('body', 'Body', 'Set the body as the current component for utility operations'),
+        ],
+        description="Choose what component to use when performing utility operations. This will determine what data is shown in the selection dropdowns as well",
+    ) # type: ignore
+    base_dna: bpy.props.EnumProperty(
+        name="Base DNA",
+        items=callbacks.get_base_dna_folder,
+        description="Choose the base DNA folder that will be used when converting the selected.",
+        options={'ANIMATABLE'}
+    ) # type: ignore
+    new_folder: bpy.props.StringProperty(
+        name="Output Folder",
+        default="",
+        subtype='DIR_PATH',
+    ) # type: ignore
+    maps_folder: bpy.props.StringProperty(
+        default='',
+        name='Maps Folder',
+        description='Optionally, this can be set to a folder location for the face wrinkle maps. Textures following the same naming convention as the metahuman source files will be found and set on the materials automatically.',
+        subtype='DIR_PATH'
+    ) # type: ignore
 
 class MetahumanSceneProperties(bpy.types.PropertyGroup):
     """
@@ -158,7 +193,7 @@ class MetahumanSceneProperties(bpy.types.PropertyGroup):
     # --------------------- riglogic properties ------------------
     rig_logic_instance_list: bpy.props.CollectionProperty(type=RigLogicInstance) # type: ignore
     rig_logic_instance_list_active_index: bpy.props.IntProperty(
-        update=callbacks.update_output_items
+        update=callbacks.update_head_output_items
     ) # type: ignore
 
 

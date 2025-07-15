@@ -1,3 +1,4 @@
+import os
 import sys
 import bpy
 import bpy.utils.previews
@@ -17,10 +18,10 @@ logger = logging.getLogger(__name__)
 bl_info = {
     "name": "Meta-Human DNA",
     "author": "Poly Hammer",
-    "version": (0, 3, 3),
+    "version": (0, 4, 0),
     "blender": (4, 2, 0),
     "location": "File > Import > Metahuman DNA",
-    "description": "Imports a Metahuman head from a DNA file, lets you customize it, then send it back to unreal.",
+    "description": "Imports MetaHuman head and body components from a their DNA files, lets you customize them, then send them back to MetaHuman Creator.",
     "warning": "",
     "wiki_url": "https://docs.polyhammer.com/meta-human-dna-addon/",
     "category": "Rigging",
@@ -39,14 +40,13 @@ classes = [
     operators.MetricsCollectionConsent,
     operators.MirrorSelectedBones,
     operators.SyncWithBodyBonesInBlueprint,
-    operators.PushBonesForwardAlongNormals,
-    operators.PushBonesBackwardAlongNormals,
     operators.ShrinkWrapVertexGroup,
-    operators.AutoFitSelectedBones,
+    # operators.AutoFitSelectedBones,
     operators.RevertBoneTransformsToDna,
     operators.ForceEvaluate,
+    operators.SendToMetaHumanCreator,
     operators.SendToUnreal,
-    operators.ExportToDisk,
+    operators.ExportSelectedComponent,
     operators.GenerateMaterial,
     operators.SculptThisShapeKey,
     operators.EditThisShapeKey,
@@ -66,20 +66,20 @@ classes = [
     importer.META_HUMAN_DNA_EXTRAS_PT_panel,
     importer.META_HUMAN_DNA_FILE_INFO_PT_panel,
     view_3d.META_HUMAN_DNA_PT_face_board,
-    view_3d.META_HUMAN_DNA_PT_utilities,
-    view_3d.META_HUMAN_DNA_PT_mesh_utilities_sub_panel,
-    view_3d.META_HUMAN_DNA_PT_armature_utilities_sub_panel,
-    view_3d.META_HUMAN_DNA_PT_materials_utilities_sub_panel,
-    view_3d.META_HUMAN_DNA_PT_utilities_sub_panel,
-    view_3d.META_HUMAN_DNA_UL_shape_keys,
-    view_3d.META_HUMAN_DNA_UL_output_items,
-    view_3d.META_HUMAN_DNA_UL_rig_logic_instances,
-    view_3d.META_HUMAN_DNA_UL_material_slot_to_instance_mapping,
     view_3d.META_HUMAN_DNA_PT_view_options,
     view_3d.META_HUMAN_DNA_PT_rig_logic,
     view_3d.META_HUMAN_DNA_PT_shape_keys,
+    view_3d.META_HUMAN_DNA_UL_shape_keys,
+    view_3d.META_HUMAN_DNA_PT_utilities,
+    view_3d.META_HUMAN_DNA_PT_mesh_utilities_sub_panel,
+    view_3d.META_HUMAN_DNA_PT_armature_utilities_sub_panel,
+    # view_3d.META_HUMAN_DNA_PT_materials_utilities_sub_panel,
+    view_3d.META_HUMAN_DNA_PT_utilities_sub_panel,
+    view_3d.META_HUMAN_DNA_UL_output_items,
+    view_3d.META_HUMAN_DNA_UL_rig_logic_instances,
+    view_3d.META_HUMAN_DNA_UL_material_slot_to_instance_mapping,
     view_3d.META_HUMAN_DNA_PT_output_panel,
-    view_3d.META_HUMAN_DNA_PT_send2ue_settings_sub_panel,
+    # view_3d.META_HUMAN_DNA_PT_send2ue_settings_sub_panel,
     view_3d.META_HUMAN_DNA_PT_buttons_sub_panel
 ]
 
@@ -97,8 +97,9 @@ def register():
     """
     Registers the addon classes when the addon is enabled.
     """
-    logging.basicConfig(level=logging.INFO)
-
+    if os.environ.get('META_HUMAN_DNA_DEV'):
+        logging.basicConfig(level=logging.DEBUG)
+        
     try:
         # register the manual map
         bpy.utils.register_manual_map(manual_map.manual_map)
