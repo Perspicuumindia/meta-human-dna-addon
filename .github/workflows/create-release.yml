@@ -1,0 +1,24 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      blender_version:
+        description: Blender version
+        required: true
+        default: '4.5'
+      python_version:
+        description: Python version
+        required: true
+        default: '3.11'
+
+permissions:
+  contents: write
+
+jobs:
+  build_addon:
+    uses: ./.github/workflows/re-use-release.yaml
+    with:
+      blender_version: ${{ inputs.blender_version }}
+      python_version: ${{ inputs.python_version }}
+    secrets: inherit
